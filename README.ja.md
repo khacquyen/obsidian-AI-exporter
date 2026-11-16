@@ -242,7 +242,7 @@ message_count: 1
 
 | トークン     | 置き換わる値                                                          |
 | ------------ | --------------------------------------------------------------------- |
-| `{platform}` | ソース名（`gemini`、`claude`、`chatgpt`、`perplexity`、`notebooklm`） |
+| `{platform}` | ソース名（`gemini`、`claude`、`chatgpt`、`perplexity`、`notebooklm`、`grok`） |
 | `{YYYY}`     | 4桁の年（ローカル時間、例: `2026`）                                   |
 | `{YY}`       | 2桁の年（ローカル時間、例: `26`）                                     |
 | `{MM}`       | 2桁のゼロ埋め月（例: `07`）                                           |
@@ -308,7 +308,7 @@ ChatGPT は生成画像を `chatgpt.com` 自身から配信するので、ペー
 ## アーキテクチャ
 
 ```
-Content Script (gemini.google.com, claude.ai, chatgpt.com, www.perplexity.ai, notebook.google.com + legacy notebooklm.google.com)
+Content Script (gemini.google.com, claude.ai, chatgpt.com, www.perplexity.ai, notebook.google.com + legacy notebooklm.google.com, grok.com)
     ↓ 会話 / Deep Research / Artifacts を抽出
 Background Service Worker
     ↓ Obsidian に送信

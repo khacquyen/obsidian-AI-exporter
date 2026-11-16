@@ -54,6 +54,7 @@
     <li><strong>www.perplexity.ai</strong>: To extract Perplexity conversation content (read-only)</li>
     <li><strong>notebook.google.com</strong>: To extract Gemini Notebook conversation content (read-only)</li>
     <li><strong>notebooklm.google.com</strong>: Legacy NotebookLM host, redirected by Google to notebook.google.com (read-only)</li>
+    <li><strong>grok.com</strong>: To extract Grok conversation content (read-only)</li>
     <li><strong>Your Obsidian instance</strong>: To save files to your Obsidian vault via Local REST API (when Obsidian output is enabled). By default this is <code>127.0.0.1</code> (localhost) over HTTP. Users can optionally configure HTTPS or a LAN host address.</li>
     <li><strong>googleusercontent.com and lh3.google.com</strong>: To download AI-generated images so they can be saved with the conversation (only when image export is enabled, and only for images contained in the conversation you are exporting). These are Google's image CDN — the same CDN the AI page already loads those images from, which redirects the download from the first host to the second. The request downloads an image; no conversation content or personal data is sent.</li>
   </ul>
@@ -80,6 +81,7 @@
     <tr><td>Host: chatgpt.com</td><td>Inject the sync button on ChatGPT pages</td></tr>
     <tr><td>Host: www.perplexity.ai</td><td>Inject the sync button on Perplexity pages</td></tr>
     <tr><td>Host: notebook.google.com</td><td>Inject the sync button on Gemini Notebook pages</td></tr>
+    <tr><td>Host: grok.com</td><td>Inject the sync button on Grok pages</td></tr>
     <tr><td>Host: notebooklm.google.com</td><td>Inject the sync button on legacy NotebookLM URLs</td></tr>
     <tr><td>Host: *.googleusercontent.com</td><td>Download AI-generated images for export (image export only). The browser blocks the page itself from fetching these, so the extension downloads them.</td></tr>
     <tr><td>Host: lh3.google.com</td><td>The image CDN redirects the download to this host, and the redirect is blocked unless it is listed too.</td></tr>

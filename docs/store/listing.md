@@ -45,11 +45,11 @@ Dashboard field: 単一用途の説明 / "Single purpose description". Limit 100
 <!-- field: single_purpose, limit: 1000 -->
 
 ```text
-Export and save Gemini, Claude, ChatGPT, Perplexity AI, and Gemini Notebook conversations locally as Markdown notes - to Obsidian, as files, or to clipboard.
+Export and save Gemini, Claude, ChatGPT, Perplexity AI, Gemini Notebook, and Grok conversations locally as Markdown notes - to Obsidian, as files, or to clipboard.
 ```
 
-157 characters. Replaced the previous 140-character text, which named only four
-platforms and had been stale since NotebookLM shipped in #206 (2026-04-09).
+163 characters. Grok added 2026-11-16; before that 157 characters, which replaced a
+140-character text that named only four platforms (stale since NotebookLM, #206).
 
 ---
 
@@ -115,20 +115,20 @@ numbering is for the reviewer, not the manifest.
 <!-- field: host_permissions, limit: 1000 -->
 
 ```text
-Nine host permissions are required:
+Ten host permissions are required:
 
 1. gemini.google.com - inject the "Sync to Obsidian" button and read conversation content from Gemini pages. Read-only.
-2-6. claude.ai, chatgpt.com, www.perplexity.ai, notebook.google.com (Gemini Notebook) and notebooklm.google.com (former host, still redirected) - the same button and read-only access, on those sites.
+2-7. claude.ai, chatgpt.com, www.perplexity.ai, grok.com, notebook.google.com (Gemini Notebook) and notebooklm.google.com (old host, redirected) - the same, on those sites.
 
-7-8. *.googleusercontent.com and lh3.google.com - download AI-generated images to save with the conversation, when image export is on. Both are Google image CDN hosts: the page loads images from the first, which redirects to the second. Chrome blocks the page from fetching them, so the extension does. Images only: no conversation content or user data is sent.
+8-9. *.googleusercontent.com and lh3.google.com - download AI-generated images to save with the conversation, when image export is on. Both are Google image CDN hosts: the page loads images from the first, which redirects to the second. Chrome blocks the page from fetching them, so the extension does. Images only: no conversation content or user data is sent.
 
-9. 127.0.0.1 (localhost, HTTP and HTTPS) - communicate with Obsidian's Local REST API plugin on the user's own machine, saving conversations to their vault.
+10. 127.0.0.1 (localhost, HTTP and HTTPS) - communicate with Obsidian's Local REST API plugin on the user's own machine, saving conversations to their vault.
 
 Conversation content goes only to the user's own Obsidian instance, never to a third party. No analytics or telemetry.
 ```
 
-997 characters. 3 characters of headroom remain: a tenth host means compressing
-this text again, not appending to it. The ninth host (2026-08-13, ADR-030) was
+970 characters. The tenth host (grok.com, 2026-11-16) was absorbed by shortening the
+2-7 entry; 30 characters of headroom remain. The ninth host (2026-08-13, ADR-030) was
 absorbed by merging the two CDN entries into `7-8.` and trimming prose, not by
 dropping any host — every entry of `host_permissions` must appear here verbatim,
 and `test/arch/platform-ssot.test.ts` keeps the per-platform hosts in the

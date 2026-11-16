@@ -33,6 +33,7 @@ const PLATFORM_IDS: Record<string, string> = {
   // notebook.google.com; the legacy host is kept during rollout (ADR-023).
   'notebook.google.com': 'notebooklm',
   'notebooklm.google.com': 'notebooklm',
+  'grok.com': 'grok',
 };
 
 interface Manifest {

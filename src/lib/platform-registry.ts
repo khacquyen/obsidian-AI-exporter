@@ -45,6 +45,7 @@ export const PLATFORM_REGISTRY: Record<AIPlatform, PlatformInfo> = {
     label: 'Gemini Notebook',
     labelAliases: ['NotebookLM'],
   },
+  grok: { hosts: ['grok.com'], label: 'Grok' },
 };
 
 /** All platform ids, in registry declaration order */

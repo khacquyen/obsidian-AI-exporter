@@ -1,6 +1,6 @@
 # Obsidian AI Exporter
 
-Chrome Extension that exports AI conversations from Google Gemini, Claude AI, ChatGPT, Perplexity, and Gemini Notebook (formerly NotebookLM) to Obsidian via the Local REST API.
+Chrome Extension that exports AI conversations from Google Gemini, Claude AI, ChatGPT, Perplexity, Gemini Notebook (formerly NotebookLM), and Grok to Obsidian via the Local REST API.
 
 [日本語版はこちら](README.ja.md)
 
@@ -9,7 +9,7 @@ Chrome Extension that exports AI conversations from Google Gemini, Claude AI, Ch
 
 ## Features
 
-- **Multi-platform support**: Export from Google Gemini, Claude AI, ChatGPT, Perplexity, and Gemini Notebook (formerly NotebookLM)
+- **Multi-platform support**: Export from Google Gemini, Claude AI, ChatGPT, Perplexity, Gemini Notebook (formerly NotebookLM), and Grok
 - **One-click export**: Floating "Sync" button on supported AI pages
 - **Persistent sync status**: A ✓ / ! / × badge stays on the sync button after a sync finishes — click it for the file name, per-destination results, warnings, and when the sync ran. It clears when you switch conversations, dismiss it, or — on Claude and ChatGPT — when a message newer than the sync appears
 - **Multiple output options**: Save to Obsidian, download as file, or copy to clipboard
@@ -242,7 +242,7 @@ The **Vault Path** setting supports template tokens that are resolved at save ti
 
 | Token        | Resolves to                                                             |
 | ------------ | ----------------------------------------------------------------------- |
-| `{platform}` | Source name (`gemini`, `claude`, `chatgpt`, `perplexity`, `notebooklm`) |
+| `{platform}` | Source name (`gemini`, `claude`, `chatgpt`, `perplexity`, `notebooklm`, `grok`) |
 | `{YYYY}`     | 4-digit year, local time (e.g. `2026`)                                  |
 | `{YY}`       | 2-digit year, local time (e.g. `26`)                                    |
 | `{MM}`       | 2-digit month, zero-padded (e.g. `07`)                                  |
@@ -308,7 +308,7 @@ If `node_modules/` is missing, the Nix wrapper exits with an instruction to run 
 ## Architecture
 
 ```
-Content Script (gemini.google.com, claude.ai, chatgpt.com, www.perplexity.ai, notebook.google.com + legacy notebooklm.google.com)
+Content Script (gemini.google.com, claude.ai, chatgpt.com, www.perplexity.ai, notebook.google.com + legacy notebooklm.google.com, grok.com)
     ↓ extracts conversation / Deep Research / Artifacts
 Background Service Worker
     ↓ sends to Obsidian

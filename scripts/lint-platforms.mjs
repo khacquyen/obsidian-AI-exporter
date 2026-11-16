@@ -33,6 +33,7 @@ const HOST_DISPLAY_NAMES = {
   // test/arch/store-listing-limits.test.ts).
   'notebook.google.com': 'Gemini Notebook',
   'notebooklm.google.com': 'Gemini Notebook',
+  'grok.com': 'Grok',
 };
 
 // Check targets: each entry defines a file and what to look for.
