@@ -9,6 +9,13 @@ import { sanitizeHtml } from '../../lib/sanitize';
 import { ensureAllElementsLoaded, type ScrollResult } from '../../lib/scroll-load';
 import { describeScrollStop } from '../../lib/scroll-deadlines';
 import { ImageMarkerCollector } from '../image-markers';
+import {
+  captureReports,
+  reportToEmbeddedHtml,
+  DEFAULT_REPORT_WAIT,
+  type CapturedReport,
+  type ReportWaitOptions,
+} from './gemini-deep-research';
 import type {
   SyncSettings,
   ExtractionResult,
@@ -33,6 +40,12 @@ export class GeminiExtractor extends BaseExtractor {
   private readonly images = new ImageMarkerCollector();
   private imageIdCounter = 0;
 
+  /** Deep Research reports read for this extraction, by turn index (fork). */
+  private reportsByTurn = new Map<number, CapturedReport[]>();
+
+  /** How long to wait for each report to load (tests shorten it). */
+  reportWait: ReportWaitOptions = DEFAULT_REPORT_WAIT;
+
   /** Apply the settings only Gemini has; the shared ones live in BaseExtractor. */
   protected applyPlatformSettings(settings: SyncSettings): void {
     this.enableImageExport = settings.enableImageExport ?? true;
@@ -48,10 +61,21 @@ export class GeminiExtractor extends BaseExtractor {
 
   // ========== Extraction hooks (ADR-043) ==========
 
+  /**
+   * Fork: never export the open report panel on its own. The conversation is
+   * always extracted, and every report in it is opened and embedded in its
+   * turn (see gemini-deep-research.ts), so one sync captures both whether the
+   * panel is open or closed.
+   */
+  protected tryExtractDeepResearch(): ExtractionResult | null {
+    return null;
+  }
+
   /** Reset per-extraction image state before extractMessages() populates it. */
   protected onExtractStart(): void {
     this.imageIdCounter = 0;
     this.images.reset();
+    this.reportsByTurn = new Map();
   }
 
   /**
@@ -61,6 +85,7 @@ export class GeminiExtractor extends BaseExtractor {
    */
   protected async collectMessages(): Promise<CollectedMessages> {
     const scrollResult = await this.runAutoScroll();
+    const reportWarning = await this.loadDeepResearchReports();
     const messages = this.extractMessages();
     // One builder for both engines, so the warning text cannot drift (ADR-032);
     // truncated comes from the same stopReason (ADR-033). No watermark: a
@@ -70,7 +95,22 @@ export class GeminiExtractor extends BaseExtractor {
       scrollResult.elementCount,
       this.scrollDeadlines
     );
-    return warning ? { messages, warning, truncated: true } : { messages };
+    const warnings = [warning, reportWarning].filter(Boolean).join(' ');
+    if (warning) return { messages, warning: warnings, truncated: true };
+    return warnings ? { messages, warning: warnings } : { messages };
+  }
+
+  /** Open and read every Deep Research report in the chat (fork). */
+  private async loadDeepResearchReports(): Promise<string | undefined> {
+    const turns = this.queryAllWithFallback<HTMLElement>(SELECTORS.conversationTurn);
+    const { reports, failed } = await captureReports(
+      turns,
+      () => this.extractSourceList(),
+      this.reportWait
+    );
+    this.reportsByTurn = reports;
+    if (failed === 0) return undefined;
+    return `${failed} Deep Research report(s) could not be loaded and were left out.`;
   }
 
   /** Fetch the captured generated images (blob → base64) and attach them. */
@@ -202,6 +242,7 @@ export class GeminiExtractor extends BaseExtractor {
     }
 
     console.info(`[G2O] Found ${turns.length} conversation turns`);
+    let reportCount = 0;
 
     // Process each conversation turn
     turns.forEach((turn, index) => {
@@ -222,7 +263,10 @@ export class GeminiExtractor extends BaseExtractor {
       // Extract model response from this turn
       const modelResponse = this.queryWithFallback<HTMLElement>(SELECTORS.modelResponse, turn);
       if (modelResponse) {
-        const content = this.extractModelResponseContent(modelResponse);
+        let content = this.extractModelResponseContent(modelResponse);
+        for (const report of this.reportsByTurn.get(index) ?? []) {
+          content += '\n' + reportToEmbeddedHtml(report, `dr${++reportCount}`);
+        }
         if (content) {
           messages.push({
             id: `assistant-${index}`,

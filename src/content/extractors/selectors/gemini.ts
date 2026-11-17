@@ -73,6 +73,22 @@ export const DEEP_RESEARCH_SELECTORS = {
 } as const satisfies SelectorGroup;
 
 /**
+ * Deep Research report chips inside the conversation (fork-only, not in the
+ * E2E baseline: they only exist in chats that have a report).
+ *
+ * Verified live 2026-11-17: a finished report shows as an
+ * <immersive-entry-chip> inside the model response; the report HTML is not in
+ * the DOM until its "Open" button is clicked. The panel's close button is the
+ * only one whose icon is `close` (its aria-label is localized).
+ */
+export const DEEP_RESEARCH_CHIP_SELECTORS = {
+  chip: ['immersive-entry-chip'],
+  openButton: ['gem-button.open-button button'],
+  // The icon inside the close button; the caller clicks its closest <button>.
+  closeIcon: ['deep-research-immersive-panel button mat-icon[fonticon="close"]'],
+} as const satisfies SelectorGroup;
+
+/**
  * Deep Research link extraction selectors
  */
 export const DEEP_RESEARCH_LINK_SELECTORS = {

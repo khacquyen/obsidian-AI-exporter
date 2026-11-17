@@ -6,7 +6,6 @@ import {
   assertMessageStructure,
   assertFrontmatterFields,
   assertCalloutFormat,
-  assertDeepResearchFormat,
 } from './helpers';
 import { clearFixture, resetLocation } from '../../fixtures/dom-helpers';
 
@@ -54,37 +53,7 @@ describe('Gemini E2E Extraction', () => {
     });
   });
 
-  describe('Deep Research Report', () => {
-    const FIXTURE = 'deep-research';
-    const CONVERSATION_ID = 'e2e-gemini-dr-001';
-
-    it('should extract Deep Research with valid structure', async () => {
-      const result = await runE2EPipeline('gemini', FIXTURE, CONVERSATION_ID);
-      assertExtractionSuccess(result);
-
-      assertSourcePlatform(result.conversationData, 'gemini');
-      assertFrontmatterFields(result.obsidianNote, { isDeepResearch: true });
-      assertDeepResearchFormat(result.conversationData, result.finalMarkdown);
-    });
-
-    it('should generate Deep Research markdown with footnotes', async () => {
-      const result = await runE2EPipeline('gemini', FIXTURE, CONVERSATION_ID);
-      assertExtractionSuccess(result);
-
-      expect(result.finalMarkdown).toMatchSnapshot();
-    });
-
-    it('should include all sources in References section', async () => {
-      const result = await runE2EPipeline('gemini', FIXTURE, CONVERSATION_ID);
-      assertExtractionSuccess(result);
-
-      expect(result.finalMarkdown).toContain('# References');
-
-      const sourceCount = result.conversationData.links?.sources.length ?? 0;
-      if (sourceCount > 0) {
-        const footnoteMatches = result.finalMarkdown.match(/\[\^\d+\]:/g);
-        expect(footnoteMatches?.length).toBe(sourceCount);
-      }
-    });
-  });
+  // Fork: the panel-only Deep Research export is gone for Gemini; the
+  // deep-research fixture is exercised embedded in a conversation by
+  // test/extractors/gemini-deep-research.test.ts.
 });

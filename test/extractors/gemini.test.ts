@@ -648,55 +648,9 @@ describe('GeminiExtractor', () => {
       });
     });
 
-    describe('extractDeepResearch (via extract)', () => {
-      it('returns successful result with report data', async () => {
-        setGeminiLocation('test123');
-        loadFixture(createDeepResearchDOM('Test Report', '<h1>Title</h1><p>Content</p>'));
-
-        const result = await extractor.extract();
-
-        expect(result.success).toBe(true);
-        expect(result.data?.type).toBe('deep-research');
-        expect(result.data?.source).toBe('gemini');
-        expect(result.data?.title).toBe('Test Report');
-        expect(result.data?.messages.length).toBe(1);
-        expect(result.data?.messages[0].role).toBe('assistant');
-      });
-
-      it('returns error when content is empty', async () => {
-        setGeminiLocation('test123');
-        loadFixture(createEmptyDeepResearchPanel());
-
-        const result = await extractor.extract();
-
-        expect(result.success).toBe(false);
-        expect(result.error).toContain('content not found');
-      });
-
-      it('generates consistent ID from title for overwrite', async () => {
-        setGeminiLocation('test123');
-        loadFixture(createDeepResearchDOM('Same Title', '<p>Content 1</p>'));
-        const result1 = await extractor.extract();
-
-        clearFixture();
-        loadFixture(createDeepResearchDOM('Same Title', '<p>Content 2</p>'));
-        const result2 = await extractor.extract();
-
-        expect(result1.data?.id).toBe(result2.data?.id);
-      });
-    });
-
+    // Fork: Gemini no longer exports the open panel on its own; reports are
+    // embedded in the conversation (test/extractors/gemini-deep-research.test.ts).
     describe('extract routing', () => {
-      it('extracts Deep Research when panel is visible', async () => {
-        setGeminiLocation('test123');
-        loadFixture(createDeepResearchDOM('Report', '<p>Content</p>'));
-
-        const result = await extractor.extract();
-
-        expect(result.success).toBe(true);
-        expect(result.data?.type).toBe('deep-research');
-      });
-
       it('extracts normal conversation when panel is not visible', async () => {
         setGeminiLocation('test123');
         const html = createGeminiConversationDOM([
@@ -711,7 +665,7 @@ describe('GeminiExtractor', () => {
         expect(result.data?.type).toBeUndefined();
       });
 
-      it('prioritizes Deep Research when both exist', async () => {
+      it('extracts the conversation even when a report panel is open (fork)', async () => {
         setGeminiLocation('test123');
         const conversationHtml = createGeminiConversationDOM([
           { role: 'user', content: 'Hello' },
@@ -723,7 +677,8 @@ describe('GeminiExtractor', () => {
         const result = await extractor.extract();
 
         expect(result.success).toBe(true);
-        expect(result.data?.type).toBe('deep-research');
+        expect(result.data?.type).toBeUndefined();
+        expect(result.data?.messages).toHaveLength(2);
       });
     });
 
@@ -792,31 +747,6 @@ describe('GeminiExtractor', () => {
           // citations and usedIndices removed in v2.0
           expect((links as unknown as Record<string, unknown>).citations).toBeUndefined();
           expect((links as unknown as Record<string, unknown>).usedIndices).toBeUndefined();
-        });
-      });
-
-      describe('extractDeepResearch with links (via extract)', () => {
-        it('includes links in extraction result', async () => {
-          setGeminiLocation('test123');
-          const content = `<p>Content${createInlineCitation(0)}</p>`;
-          loadFixture(createDeepResearchDOMWithLinks('Test Report', content, sampleSources));
-
-          const result = await extractor.extract();
-
-          expect(result.success).toBe(true);
-          expect(result.data?.links).toBeDefined();
-          expect(result.data?.links?.sources).toHaveLength(3);
-        });
-
-        it('handles missing links gracefully', async () => {
-          setGeminiLocation('test123');
-          loadFixture(createDeepResearchDOM('Test', '<p>No links</p>'));
-
-          const result = await extractor.extract();
-
-          expect(result.success).toBe(true);
-          expect(result.data?.links).toBeDefined();
-          expect(result.data?.links?.sources).toHaveLength(0);
         });
       });
     });
@@ -1315,26 +1245,6 @@ describe('GeminiExtractor', () => {
       expect(timeoutWarning).toBeUndefined();
       // Far more than the ~25 turns an old 30s wall could load before cutting off.
       expect(result.data!.messages.length).toBeGreaterThanOrEqual(150);
-    });
-
-    it('does not scroll when Deep Research panel is visible', async () => {
-      setGeminiLocation('test123');
-      // Deep Research panel + scroll container with scrollTop > 0
-      const deepResearchHTML = createDeepResearchDOM('Report', '<p>Content</p>');
-      const conversationHTML = createGeminiConversationDOM([
-        { role: 'user', content: 'Q1' },
-        { role: 'assistant', content: '<p>A1</p>' },
-      ]);
-      loadFixture(createGeminiScrollableDOM(conversationHTML) + deepResearchHTML);
-      mockScrollContainer(500);
-
-      const result = await extractor.extract();
-
-      expect(result.success).toBe(true);
-      expect(result.data?.type).toBe('deep-research');
-      // No scroll-related warnings
-      const timeoutWarning = result.warnings?.find(w => w.includes('Auto-scroll'));
-      expect(timeoutWarning).toBeUndefined();
     });
 
     it('extracts all messages after scroll loads additional turns (integration)', async () => {
