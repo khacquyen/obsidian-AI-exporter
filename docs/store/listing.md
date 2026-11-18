@@ -115,20 +115,23 @@ numbering is for the reviewer, not the manifest.
 <!-- field: host_permissions, limit: 1000 -->
 
 ```text
-Ten host permissions are required:
+Eleven host permissions are required:
 
 1. gemini.google.com - inject the "Sync to Obsidian" button and read conversation content from Gemini pages. Read-only.
-2-7. claude.ai, chatgpt.com, www.perplexity.ai, grok.com, notebook.google.com (Gemini Notebook) and notebooklm.google.com (old host, redirected) - the same, on those sites.
+2-7. claude.ai, chatgpt.com, www.perplexity.ai, grok.com, notebook.google.com (Gemini Notebook) and notebooklm.google.com (old host, redirected) - the same.
 
-8-9. *.googleusercontent.com and lh3.google.com - download AI-generated images to save with the conversation, when image export is on. Both are Google image CDN hosts: the page loads images from the first, which redirects to the second. Chrome blocks the page from fetching them, so the extension does. Images only: no conversation content or user data is sent.
+8-9. *.googleusercontent.com and lh3.google.com - download AI-generated images when image export is on. Google image CDN hosts; the first redirects to the second. Images only.
 
-10. 127.0.0.1 (localhost, HTTP and HTTPS) - communicate with Obsidian's Local REST API plugin on the user's own machine, saving conversations to their vault.
+10. *.web-sandbox.oaiusercontent.com - read ChatGPT Deep Research reports, which ChatGPT shows in a frame on this host. Read-only.
+
+11. 127.0.0.1 (localhost, HTTP and HTTPS) - send conversations to Obsidian's Local REST API on the user's own machine.
 
 Conversation content goes only to the user's own Obsidian instance, never to a third party. No analytics or telemetry.
 ```
 
-970 characters. The tenth host (grok.com, 2026-11-16) was absorbed by shortening the
-2-7 entry; 30 characters of headroom remain. The ninth host (2026-08-13, ADR-030) was
+864 characters. The eleventh host (*.web-sandbox.oaiusercontent.com, 2026-11-18, ADR-046)
+was absorbed by shortening the 2-7, 8-9 and 11 entries. The tenth host (grok.com, 2026-11-16) was absorbed by shortening the
+2-7 entry. The ninth host (2026-08-13, ADR-030) was
 absorbed by merging the two CDN entries into `7-8.` and trimming prose, not by
 dropping any host — every entry of `host_permissions` must appear here verbatim,
 and `test/arch/platform-ssot.test.ts` keeps the per-platform hosts in the

@@ -3,18 +3,26 @@
  *
  * Extracts conversations from ChatGPT (chatgpt.com).
  *
- * Deep Research reports are NOT extractable: ChatGPT renders them inside a
- * cross-origin sandboxed iframe, which a content script on chatgpt.com cannot
- * read (issue #283). They are detected and reported rather than silently
- * dropped — see {@link ChatGPTExtractor.buildConversationResult}.
+ * Deep Research reports live in a sandboxed app iframe on another origin
+ * (issue #283). The page cannot read it, but the frame agent the extension
+ * injects there answers a postMessage request (ADR-046), so a report is
+ * appended to its turn's answer. A frame that does not answer is still
+ * detected and reported rather than silently dropped — see
+ * {@link ChatGPTExtractor.buildConversationResult}.
  *
  * @see docs/design/DES-003-chatgpt-extractor.md
  */
 
-import { BaseExtractor, type ScrollConfig } from './base';
+import { BaseExtractor, type CollectedMessages, type ScrollConfig } from './base';
 import { sanitizeHtml } from '../../lib/sanitize';
 import { generateHash } from '../../lib/hash';
 import type { HarvestEntry } from '../../lib/scroll-accumulate';
+import {
+  FRAME_REPORT_REQUEST,
+  isFrameReportReply,
+  isSandboxOrigin,
+  type FrameReportRequest,
+} from '../../lib/chatgpt-frame-protocol';
 import { ImageMarkerCollector } from '../image-markers';
 import type {
   AIPlatform,
@@ -80,7 +88,66 @@ const DEEP_RESEARCH_FRAME_SELECTORS = [
   'iframe[title="internal://deep-research"]',
   'iframe[src*="deep-research"][src*="oaiusercontent.com"]',
   'iframe[src*="deep_research"][src*="oaiusercontent.com"]',
+  // 2026-11-18 (ADR-046): host `connector-id-<hash>.web-sandbox…`, localized
+  // title, frame under `div[data-mcp-app-frame]`. Neither names Deep Research,
+  // so any app frame counts; one that answers the frame agent is exported.
+  '[data-mcp-app-frame] iframe',
+  'iframe[src*=".web-sandbox.oaiusercontent.com"]',
 ] as const;
+
+/** How long to wait for app frames to answer a report request. */
+const FRAME_REPORT_TIMEOUT_MS = 2500; // above the agent's 1s nested-frame wait
+
+/** Report HTML per frame element, as read by {@link requestFrameReports}. */
+export type FrameReports = Map<HTMLIFrameElement, string>;
+
+/**
+ * Ask each app frame's agent for its report (ADR-046). Frames that do not
+ * answer within the timeout are left out; the caller reports them.
+ */
+export function requestFrameReports(
+  frames: HTMLIFrameElement[],
+  timeoutMs: number = FRAME_REPORT_TIMEOUT_MS
+): Promise<FrameReports> {
+  const reports: FrameReports = new Map();
+  if (frames.length === 0) return Promise.resolve(reports);
+  const nonce = crypto.randomUUID();
+
+  return new Promise(resolve => {
+    let answered = 0;
+    const finish = (): void => {
+      window.removeEventListener('message', onMessage);
+      clearTimeout(timer);
+      console.info(`[G2O] App frames: ${frames.length}, reports read: ${reports.size}`);
+      resolve(reports);
+    };
+    const onMessage = (event: MessageEvent): void => {
+      if (!isSandboxOrigin(event.origin) || !isFrameReportReply(event.data)) return;
+      if (event.data.nonce !== nonce) return;
+      const frame = frames.find(f => f.contentWindow === event.source);
+      if (!frame) return;
+      if (event.data.html) reports.set(frame, event.data.html);
+      console.info(
+        `[G2O] App frame answered: ${event.data.html.length} chars, ` +
+          `${event.data.nestedFrames} nested frame(s) ${JSON.stringify(event.data.nestedOrigins ?? [])}`
+      );
+      answered += 1;
+      if (answered === frames.length) finish();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    window.addEventListener('message', onMessage);
+
+    const request: FrameReportRequest = { type: FRAME_REPORT_REQUEST, nonce };
+    for (const frame of frames) {
+      try {
+        const origin = new URL(frame.src).origin;
+        if (isSandboxOrigin(origin)) frame.contentWindow?.postMessage(request, origin);
+      } catch {
+        // malformed src: the frame cannot be asked; it is reported as unread
+      }
+    }
+  });
+}
 
 /**
  * The pre-2026-09 layout (issue #515): one `section[data-turn-id]` per message,
@@ -145,6 +212,16 @@ export class ChatGPTExtractor extends BaseExtractor {
    */
   private readonly images = new ImageMarkerCollector();
 
+  /**
+   * Reads app-frame reports before the turns are harvested (ADR-046).
+   * Replaceable so tests can stand in for the cross-origin frame agent.
+   */
+  frameReportReader: (frames: HTMLIFrameElement[]) => Promise<FrameReports> = frames =>
+    requestFrameReports(frames);
+
+  /** Reports read for the current extraction, keyed by frame element. */
+  private frameReports: FrameReports = new Map();
+
   /** Apply the settings only this platform has; the shared ones live in BaseExtractor. */
   protected applyPlatformSettings(settings: SyncSettings): void {
     this.enableImageExport = settings.enableImageExport ?? true;
@@ -152,6 +229,16 @@ export class ChatGPTExtractor extends BaseExtractor {
 
   protected onExtractStart(): void {
     this.images.reset();
+    this.frameReports = new Map();
+  }
+
+  /**
+   * Read the app frames' reports first: the request is async and the turn
+   * harvest that consumes them is not (ADR-046).
+   */
+  protected async collectMessages(): Promise<CollectedMessages> {
+    this.frameReports = await this.frameReportReader(this.findDeepResearchFrames(document));
+    return super.collectMessages();
   }
 
   protected finalizeExtraction(result: ExtractionResult): Promise<ExtractionResult> {
@@ -229,12 +316,32 @@ export class ChatGPTExtractor extends BaseExtractor {
    *
    * A frame is counted once even when it matches both selectors.
    */
-  private countDeepResearchFrames(): number {
-    const frames = new Set<Element>();
+  private findDeepResearchFrames(root: Element | Document): HTMLIFrameElement[] {
+    const frames = new Set<HTMLIFrameElement>();
     for (const selector of DEEP_RESEARCH_FRAME_SELECTORS) {
-      document.querySelectorAll(selector).forEach(frame => frames.add(frame));
+      root.querySelectorAll<HTMLIFrameElement>(selector).forEach(frame => frames.add(frame));
     }
-    return frames.size;
+    return [...frames];
+  }
+
+  /** Report frames on the page whose report could not be read. */
+  private countDeepResearchFrames(): number {
+    return this.findDeepResearchFrames(document).filter(frame => !this.frameReports.has(frame))
+      .length;
+  }
+
+  /**
+   * The turn's app-frame reports as answer HTML, each under a heading taken
+   * from the frame title (localized, e.g. "Nghiên cứu sâu").
+   */
+  private frameReportBlocks(turnElement: Element): string[] {
+    return this.findDeepResearchFrames(turnElement).flatMap(frame => {
+      const html = this.frameReports.get(frame);
+      if (!html) return [];
+      const heading = document.createElement('h2');
+      heading.textContent = frame.title.trim() || 'Deep Research';
+      return [this.sanitizeBlockHtml(heading.outerHTML + html)];
+    });
   }
 
   /**
@@ -392,6 +499,17 @@ export class ChatGPTExtractor extends BaseExtractor {
         value: { id: key, role: 'assistant', content: answer, htmlContent: answer, index: 0 },
       });
     }
+
+    // Each app-frame report is its own message after the answer (ADR-046):
+    // append mode adds messages by count, so a report that becomes readable
+    // after a first save is still added on the next sync.
+    this.frameReportBlocks(turn).forEach((report, i) => {
+      const reportKey = `${turnKey}:app-frame-${i}`;
+      entries.push({
+        key: reportKey,
+        value: { id: reportKey, role: 'assistant', content: report, htmlContent: report, index: 0 },
+      });
+    });
     return entries;
   }
 
@@ -405,7 +523,7 @@ export class ChatGPTExtractor extends BaseExtractor {
     if (role !== 'user' && role !== 'assistant') return [];
 
     const content =
-      role === 'user' ? this.extractUserContent(turn) : this.extractAssistantContent(turn);
+      role === 'user' ? this.extractUserContent(turn) : this.extractAssistantContent(turn, true);
     if (!content) return [];
 
     const key =
@@ -478,17 +596,19 @@ export class ChatGPTExtractor extends BaseExtractor {
    * parameters are stripped from citation URLs.
    * @see NFR-001-2 in design document
    */
-  private extractAssistantContent(turnElement: Element): string {
+  private extractAssistantContent(turnElement: Element, includeFrameReports = false): string {
     const markdownEls = this.queryAllWithFallback<HTMLElement>(MARKDOWN_ANY_LAYOUT, turnElement);
     // The image widget sits beside the prose, not inside it, and an
     // image-only turn has no prose at all — so the markers are appended to
     // whatever text the turn has, and on their own they keep the turn alive.
     const imageMarkers = this.generatedImageMarkers(turnElement);
+    // The 2026-09 layout emits reports as messages of their own (pairTurnEntries).
+    const reports = includeFrameReports ? this.frameReportBlocks(turnElement) : [];
 
     if (markdownEls.length > 0) {
       const answerEls = this.selectAnswerBlocks(turnElement, markdownEls);
       const blocks = answerEls.map(el => this.sanitizeBlockHtml(el.innerHTML));
-      return [...blocks, imageMarkers].filter(Boolean).join('\n\n');
+      return [...blocks, ...reports, imageMarkers].filter(Boolean).join('\n\n');
     }
 
     // Fallback (legacy layout only): the old assistantResponse selectors.
@@ -497,12 +617,12 @@ export class ChatGPTExtractor extends BaseExtractor {
       turnElement
     );
     if (assistantEl) {
-      return [this.sanitizeBlockHtml(assistantEl.innerHTML), imageMarkers]
+      return [this.sanitizeBlockHtml(assistantEl.innerHTML), ...reports, imageMarkers]
         .filter(Boolean)
         .join('\n\n');
     }
 
-    return imageMarkers;
+    return [...reports, imageMarkers].filter(Boolean).join('\n\n');
   }
 
   /**
