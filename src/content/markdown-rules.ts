@@ -223,16 +223,35 @@ function formatMath(latex: string, display: boolean): string {
 // placeholder spans must be converted to `[^label]` here or their marker
 // text would leak into the cell verbatim. For the same reason the instance
 // `escape()` never sees the text, so it is escaped here (DES-019 §4.3, P6).
+//
+// Math (`[data-math]`, from preprocessKatex) goes through formatMath instead:
+// its textContent is the bare LaTeX, so escaping it as text dropped the `$`
+// delimiters and doubled every `\`. A cell is one line, so display math is
+// written inline. Text around it is still escaped.
 function tableCellText(cell: Element): string {
-  if (!cell.querySelector('[data-footnote-ref]')) {
+  if (!cell.querySelector('[data-footnote-ref], [data-math]')) {
     return escapeInlineText(cell.textContent?.trim() || '');
   }
-  const clone = cell.cloneNode(true) as Element;
-  clone.querySelectorAll('[data-footnote-ref]').forEach(ref => {
-    const label = ref.getAttribute('data-footnote-ref');
-    ref.replaceWith(isFootnoteLabel(label) ? `[^${label}]` : '');
-  });
-  return escapeInlineText(clone.textContent?.trim() || '');
+  const parts: string[] = [];
+  const walk = (node: Node): void => {
+    node.childNodes.forEach(child => {
+      if (child.nodeType === Node.TEXT_NODE) {
+        parts.push(escapeInlineText(child.textContent || ''));
+        return;
+      }
+      if (!(child instanceof Element)) return;
+      if (child.hasAttribute('data-footnote-ref')) {
+        const label = child.getAttribute('data-footnote-ref');
+        parts.push(isFootnoteLabel(label) ? `[^${label}]` : '');
+      } else if (child.hasAttribute('data-math')) {
+        parts.push(formatMath(child.getAttribute('data-math') || '', false));
+      } else {
+        walk(child);
+      }
+    });
+  };
+  walk(cell);
+  return parts.join('').trim();
 }
 
 // Custom rule for code blocks with language detection
