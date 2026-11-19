@@ -409,6 +409,27 @@ describe('htmlToMarkdown', () => {
       const result = htmlToMarkdown(sanitizeHtml(html));
       expect(result).toContain('$\\begin{pmatrix} a & b \\end{pmatrix}$');
     });
+
+    it('keeps inline math delimiters and backslashes inside a table cell', () => {
+      const html =
+        '<table><thead><tr><th>Đại lượng</th><th>Giá trị</th></tr></thead><tbody>' +
+        `<tr><td>${buildKatexHtml('P_{t\\text{đ}}')} (tải 3 bậc)</td><td>6,34 kW</td></tr>` +
+        `<tr><td>${buildKatexHtml('\\eta')}</td><td>0,8586</td></tr>` +
+        '</tbody></table>';
+      const result = htmlToMarkdown(sanitizeHtml(html));
+      expect(result).toBe(
+        '| Đại lượng | Giá trị |\n| --- | --- |\n' +
+          '| $P_{t\\text{đ}}$ (tải 3 bậc) | 6,34 kW |\n' +
+          '| $\\eta$ | 0,8586 |'
+      );
+    });
+
+    it('renders display math inside a table cell as inline math', () => {
+      const html =
+        '<table><thead><tr><th>h</th></tr></thead><tbody>' +
+        `<tr><td>${buildKatexHtml('a&lt;b', true)}</td></tr></tbody></table>`;
+      expect(htmlToMarkdown(sanitizeHtml(html))).toBe('| h |\n| --- |\n| $a\\lt b$ |');
+    });
   });
 
   describe('edge cases', () => {
