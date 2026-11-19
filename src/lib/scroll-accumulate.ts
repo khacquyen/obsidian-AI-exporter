@@ -48,6 +48,12 @@ export interface AccumulateOptions {
    * Default 0: completion is decided by stability alone.
    */
   readonly topSettleMs?: number;
+  /**
+   * Async work to finish on each freshly-mounted window before it is harvested,
+   * e.g. reading cross-origin app frames that mount only near the viewport
+   * (ChatGPT Deep Research, ADR-046). Time spent here counts toward the deadlines.
+   */
+  readonly beforeHarvest?: () => Promise<void>;
 }
 
 /** Result of accumulating a virtualized conversation via scrolling. */
@@ -105,8 +111,13 @@ export async function accumulateWhileScrolling<T>(
   const passStart = Date.now();
   const acc = createAccumulator(harvest);
   const axis = createScrollAxis(container);
+  const prepare = options.beforeHarvest ?? (async () => {});
+  const ingest = async (): Promise<void> => {
+    await prepare();
+    acc.ingest();
+  };
 
-  if (await seedAtBottom(axis, acc.ingest)) {
+  if (await seedAtBottom(axis, ingest)) {
     console.info('[G2O] No scroll range on open, conversation fits without scrolling');
     return toResult(acc, 0, 'complete', true);
   }
@@ -121,9 +132,9 @@ export async function accumulateWhileScrolling<T>(
     accumulateStep(container),
     deadlines,
     options.topSettleMs ?? 0,
-    () => {
+    async () => {
       const before = acc.size;
-      acc.ingest();
+      await ingest();
       return acc.size > before;
     }
   );
@@ -211,10 +222,10 @@ function createAccumulator<T>(harvest: () => HarvestEntry<T>[]): Accumulator<T> 
  * stays at the top. Measured through the axis, because on a column-reverse
  * scroller the pinned bottom reports scrollTop 0 (issue #515).
  */
-async function seedAtBottom(axis: ScrollAxis, ingest: () => void): Promise<boolean> {
+async function seedAtBottom(axis: ScrollAxis, ingest: () => Promise<void>): Promise<boolean> {
   axis.pinBottom();
   await delay(SCROLL_ACCUMULATE_POLL_INTERVAL);
-  ingest();
+  await ingest();
   return axis.distanceFromTop() <= 0;
 }
 
@@ -225,13 +236,13 @@ async function seedAtBottom(axis: ScrollAxis, ingest: () => void): Promise<boole
 async function stepUp(
   axis: ScrollAxis,
   step: number,
-  onWindow: () => boolean
+  onWindow: () => Promise<boolean>
 ): Promise<{ wasAtTop: boolean; after: number; moved: number; grew: boolean }> {
   const before = axis.distanceFromTop();
   axis.scrollToDistance(Math.max(0, before - step));
   await delay(SCROLL_ACCUMULATE_POLL_INTERVAL);
 
-  const grew = onWindow();
+  const grew = await onWindow();
   const after = axis.distanceFromTop();
   return { wasAtTop: before <= 0, after, moved: before - after, grew };
 }
@@ -269,7 +280,7 @@ async function scrollUpUntilStable(
   step: number,
   deadlines: ScrollDeadlines,
   topSettleMs: number,
-  onWindow: () => boolean
+  onWindow: () => Promise<boolean>
 ): Promise<{ iterations: number; stopReason: ScrollStopReason }> {
   let stable = 0;
   let iterations = 0;

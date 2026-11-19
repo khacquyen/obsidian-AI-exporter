@@ -47,6 +47,8 @@ export interface ScrollConfig {
    * platforms that load older turns only once the top is reached (ADR-042).
    */
   readonly topSettleMs?: number;
+  /** Async work per mounted window, before {@link harvest} (see AccumulateOptions). */
+  beforeHarvest?(): Promise<void>;
 }
 
 /** What {@link BaseExtractor.collectMessages} hands back to the template method. */
@@ -229,7 +231,10 @@ export abstract class BaseExtractor implements IConversationExtractor {
       container,
       () => config.harvest(),
       this.scrollDeadlines,
-      { topSettleMs: config.topSettleMs }
+      {
+        topSettleMs: config.topSettleMs,
+        beforeHarvest: config.beforeHarvest ? () => config.beforeHarvest!() : undefined,
+      }
     );
     // Re-index into contiguous conversation order after de-duplication.
     const messages = result.items.map((message, index) => ({ ...message, index }));

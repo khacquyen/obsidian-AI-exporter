@@ -308,23 +308,33 @@ export class GeminiExtractor extends BaseExtractor {
 
   /**
    * Extract user query content with multi-line support
-   * Joins all .query-text-line elements with newlines
+   * Joins the query's paragraph lines and list items with newlines, in
+   * document order. Numbered items keep "N. ", bullet items become "- ".
    */
   private extractUserQueryContent(element: Element): string {
-    // Get all query text lines and join them
-    const lines = this.queryAllWithFallback<HTMLElement>(SELECTORS.queryTextLine, element);
+    const blocks = this.queryAllWithFallback<HTMLElement>(SELECTORS.queryBlock, element);
 
-    if (lines.length > 0) {
-      const textParts: string[] = [];
-      lines.forEach(line => {
-        const text = line.textContent?.trim();
-        if (text) {
-          textParts.push(text);
-        }
-      });
-      if (textParts.length > 0) {
-        return textParts.join('\n');
+    const textParts: string[] = [];
+    blocks.forEach(block => {
+      if (block.matches('ol, ul')) {
+        const numbered = block.matches('ol');
+        let n = numbered ? Number(block.getAttribute('start') ?? '1') || 1 : 0;
+        block.querySelectorAll(':scope > li').forEach(item => {
+          const text = item.textContent?.trim();
+          if (text) {
+            textParts.push(numbered ? `${n}. ${text}` : `- ${text}`);
+          }
+          if (numbered) n++;
+        });
+        return;
       }
+      const text = block.textContent?.trim();
+      if (text) {
+        textParts.push(text);
+      }
+    });
+    if (textParts.length > 0) {
+      return textParts.join('\n');
     }
 
     // Fallback: try queryTextLine selector

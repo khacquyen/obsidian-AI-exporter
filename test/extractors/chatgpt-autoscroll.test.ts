@@ -26,13 +26,19 @@ interface Turn {
   id: string;
   /** `conversation-turn-N` ordinal, when the turn carries a data-testid. */
   ordinal?: number;
+  /** Render a Deep Research app frame in the answer (a new element on every remount). */
+  reportFrame?: boolean;
 }
 
 function renderTurn(turn: Turn): string {
   const body =
     turn.role === 'user'
       ? `<div class="whitespace-pre-wrap">${turn.content}</div>`
-      : `<div class="markdown prose"><p>${turn.content}</p></div>`;
+      : `<div class="markdown prose"><p>${turn.content}</p></div>` +
+        (turn.reportFrame
+          ? `<div data-mcp-app-frame="true"><iframe title="Nghiên cứu sâu"
+               src="https://connector-id-abc.web-sandbox.oaiusercontent.com/?app=chatgpt"></iframe></div>`
+          : '');
   const testId =
     turn.ordinal === undefined ? '' : ` data-testid="conversation-turn-${turn.ordinal}"`;
   return `<section data-turn-id="${turn.id}" data-turn="${turn.role}"${testId}>
@@ -217,6 +223,59 @@ describe('ChatGPTExtractor auto-scroll (virtualization)', () => {
     );
     expect(container).not.toBeNull();
   });
+
+  describe('Deep Research frames that mount only near the viewport (ADR-046)', () => {
+    // Measured live 2026-11-19 on chat 6afe4a48: two report frames, each mounted
+    // only while its turn is near the viewport; a sync read the frames once,
+    // before scrolling, and saved neither report.
+    const withReports: Turn[] = conversation.map((turn, i) =>
+      i === 1 || i === 5 ? { ...turn, reportFrame: true } : turn
+    );
+
+    it('reads every report frame, including frames mounted only in later windows', async () => {
+      mountVirtualizedChatGPT(withReports, 3);
+      extractor.applySettings(settings());
+      const asked: string[] = [];
+      extractor.frameReportReader = async frames =>
+        new Map(
+          frames.map(frame => {
+            const id = frame.closest('section')!.getAttribute('data-turn-id')!;
+            asked.push(id);
+            return [frame, `<p>Report ${id}</p>`];
+          })
+        );
+
+      const promise = extractor.extract();
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+      const text = result.data!.messages.map(m => plainText(m.content)).join(' | ');
+      expect(text).toContain('Report turn-1');
+      expect(text).toContain('Report turn-5');
+      expect(new Set(asked)).toEqual(new Set(['turn-1', 'turn-5']));
+      expect(asked).toHaveLength(2); // a report once read is not asked again on remount
+      expect(result.warnings?.join(' ') ?? '').not.toMatch(/deep research/i);
+    });
+
+    it('warns once per frame that never answers, after its tries run out', async () => {
+      mountVirtualizedChatGPT(withReports, 3);
+      extractor.applySettings(settings());
+      let calls = 0;
+      extractor.frameReportReader = async () => {
+        calls++;
+        return new Map();
+      };
+
+      const promise = extractor.extract();
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+      expect(result.warnings?.join(' ')).toMatch(/2 Deep Research reports/);
+      expect(calls).toBeLessThanOrEqual(2 * 3);
+    });
+  });
 });
 
 describe('ChatGPTExtractor message watermark (issue #465)', () => {
@@ -297,4 +356,5 @@ describe('ChatGPTExtractor message watermark (issue #465)', () => {
 
     expect(result.data?.messageWatermark).toBeUndefined();
   });
+
 });

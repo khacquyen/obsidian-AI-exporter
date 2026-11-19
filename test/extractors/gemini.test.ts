@@ -1331,4 +1331,74 @@ describe('GeminiExtractor', () => {
       expect(result.warnings!.some(w => w.startsWith('Auto-scroll'))).toBe(true);
     });
   });
+
+  // Gemini renders lines typed as "1. …" or "• …" in the user's prompt as
+  // <ol class="query-numbered-list"> / <ul class="query-bullet-list"> beside
+  // the <p class="query-text-line"> paragraphs. Structure measured live on
+  // 2026-11-18; prompt text invented.
+  describe('user query with list lines', () => {
+    function mountListQuery(): void {
+      setGeminiLocation('5db2f2f556c9c596');
+      loadFixture(`
+        <div class="conversation-container">
+          <user-query>
+            <div class="query-text gds-body-l">
+              <h5 class="cdk-visually-hidden screen-reader-user-query-label"><span>You said</span> Use the repo only</h5>
+              <p class="query-text-line"> Use the repo only, no web search. </p>
+              <ol class="query-numbered-list">
+                <li class="query-numbered-item"> Read the procedure file. </li>
+                <li class="query-numbered-item"> Read these pages: </li>
+              </ol>
+              <ul class="query-bullet-list">
+                <li class="query-bullet-item"><!----> pages/a.md <!----></li>
+                <li class="query-bullet-item"> pages/b.md </li>
+              </ul>
+              <p class="query-text-line"> 3. Write prompt 2: </p>
+              <ul class="query-bullet-list">
+                <li class="query-bullet-item"> Context: a personal wiki. </li>
+              </ul>
+              <p class="query-text-line"> [1] First question </p>
+              <ol class="query-numbered-list" start="4">
+                <li class="query-numbered-item"> Reply with the commit SHA. </li>
+              </ol>
+            </div>
+          </user-query>
+          <model-response>
+            <div class="response-content">
+              <div class="markdown markdown-main-panel"><p>Answer</p></div>
+            </div>
+          </model-response>
+        </div>
+      `);
+    }
+
+    it('keeps numbered and bullet lines in document order', async () => {
+      mountListQuery();
+
+      const result = await extractor.extract();
+
+      expect(result.success).toBe(true);
+      const user = result.data!.messages.find(m => m.role === 'user')!;
+      expect(user.content.split('\n')).toEqual([
+        'Use the repo only, no web search.',
+        '1. Read the procedure file.',
+        '2. Read these pages:',
+        '- pages/a.md',
+        '- pages/b.md',
+        '3. Write prompt 2:',
+        '- Context: a personal wiki.',
+        '[1] First question',
+        '4. Reply with the commit SHA.',
+      ]);
+    });
+
+    it('does not copy the screen-reader label into the message', async () => {
+      mountListQuery();
+
+      const result = await extractor.extract();
+
+      const user = result.data!.messages.find(m => m.role === 'user')!;
+      expect(user.content).not.toContain('You said');
+    });
+  });
 });

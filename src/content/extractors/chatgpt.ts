@@ -98,6 +98,17 @@ const DEEP_RESEARCH_FRAME_SELECTORS = [
 /** How long to wait for app frames to answer a report request. */
 const FRAME_REPORT_TIMEOUT_MS = 2500; // above the agent's 1s nested-frame wait
 
+/**
+ * Times one report frame is asked before it counts as unreadable. A frame that
+ * has just mounted may not have loaded its report yet; it stays mounted across
+ * a few scroll windows, so later windows ask again.
+ */
+const FRAME_REPORT_MAX_TRIES = 3;
+
+/** Turns of either layout, for locating the turn that holds an app frame. */
+const ANY_TURN_SELECTOR =
+  '[data-turn-key], section[data-turn-id], section[data-testid^="conversation-turn"]';
+
 /** Report HTML per frame element, as read by {@link requestFrameReports}. */
 export type FrameReports = Map<HTMLIFrameElement, string>;
 
@@ -219,8 +230,15 @@ export class ChatGPTExtractor extends BaseExtractor {
   frameReportReader: (frames: HTMLIFrameElement[]) => Promise<FrameReports> = frames =>
     requestFrameReports(frames);
 
-  /** Reports read for the current extraction, keyed by frame element. */
-  private frameReports: FrameReports = new Map();
+  /**
+   * Reports read for the current extraction, keyed by `<turn key>:<frame index>`.
+   * Not by element: ChatGPT mounts a report frame only while its turn is near
+   * the viewport, so each scroll window that reaches it holds a new element.
+   */
+  private frameReports = new Map<string, string>();
+
+  /** Every report frame seen during the extraction, with the times it was asked. */
+  private frameTries = new Map<string, number>();
 
   /** Apply the settings only this platform has; the shared ones live in BaseExtractor. */
   protected applyPlatformSettings(settings: SyncSettings): void {
@@ -230,15 +248,58 @@ export class ChatGPTExtractor extends BaseExtractor {
   protected onExtractStart(): void {
     this.images.reset();
     this.frameReports = new Map();
+    this.frameTries = new Map();
   }
 
   /**
-   * Read the app frames' reports first: the request is async and the turn
-   * harvest that consumes them is not (ADR-046).
+   * Read the mounted app frames' reports first: the request is async and the
+   * turn harvest that consumes them is not (ADR-046). The auto-scroll pass reads
+   * again on every window (getScrollConfig), because frames of turns away from
+   * the viewport are not mounted.
    */
   protected async collectMessages(): Promise<CollectedMessages> {
-    this.frameReports = await this.frameReportReader(this.findDeepResearchFrames(document));
+    await this.readMountedFrameReports();
     return super.collectMessages();
+  }
+
+  /**
+   * Ask the report frames mounted right now that have no report yet and have
+   * not used up their tries. Frames outside any turn (a hidden duplicate
+   * ChatGPT keeps beside the thread) are ignored.
+   */
+  private async readMountedFrameReports(): Promise<void> {
+    const pending = new Map<HTMLIFrameElement, string>();
+    for (const frame of this.findDeepResearchFrames(document)) {
+      const key = this.frameKey(frame);
+      if (!key || this.frameReports.has(key)) continue;
+      const tries = this.frameTries.get(key) ?? 0;
+      if (tries >= FRAME_REPORT_MAX_TRIES) continue;
+      this.frameTries.set(key, tries + 1);
+      pending.set(frame, key);
+    }
+    if (pending.size === 0) return;
+    const reports = await this.frameReportReader([...pending.keys()]);
+    reports.forEach((html, frame) => {
+      const key = pending.get(frame);
+      if (key && html) this.frameReports.set(key, html);
+    });
+  }
+
+  /** `<turn key>:<index of the frame within its turn>`, or null outside a turn. */
+  private frameKey(frame: HTMLIFrameElement): string | null {
+    const turn = frame.closest(ANY_TURN_SELECTOR);
+    if (!turn) return null;
+    const index = this.findDeepResearchFrames(turn).indexOf(frame);
+    return `${this.turnKeyOf(turn)}:${index}`;
+  }
+
+  /** Stable key of a turn of either layout; hashes its text as a last resort. */
+  private turnKeyOf(turn: Element): string {
+    return (
+      turn.getAttribute('data-turn-key') ||
+      turn.getAttribute('data-turn-id') ||
+      `turn-${generateHash(turn.textContent ?? '')}`
+    );
   }
 
   protected finalizeExtraction(result: ExtractionResult): Promise<ExtractionResult> {
@@ -324,10 +385,9 @@ export class ChatGPTExtractor extends BaseExtractor {
     return [...frames];
   }
 
-  /** Report frames on the page whose report could not be read. */
+  /** Report frames seen during the extraction whose report could not be read. */
   private countDeepResearchFrames(): number {
-    return this.findDeepResearchFrames(document).filter(frame => !this.frameReports.has(frame))
-      .length;
+    return [...this.frameTries.keys()].filter(key => !this.frameReports.has(key)).length;
   }
 
   /**
@@ -336,7 +396,8 @@ export class ChatGPTExtractor extends BaseExtractor {
    */
   private frameReportBlocks(turnElement: Element): string[] {
     return this.findDeepResearchFrames(turnElement).flatMap(frame => {
-      const html = this.frameReports.get(frame);
+      const key = this.frameKey(frame);
+      const html = key ? this.frameReports.get(key) : undefined;
       if (!html) return [];
       const heading = document.createElement('h2');
       heading.textContent = frame.title.trim() || 'Deep Research';
@@ -418,6 +479,7 @@ export class ChatGPTExtractor extends BaseExtractor {
       container: SCROLL_CONTAINER_ANY_LAYOUT,
       topSettleMs: TOP_SETTLE_MS,
       harvest: () => this.harvestWindow(),
+      beforeHarvest: () => this.readMountedFrameReports(),
     };
   }
 

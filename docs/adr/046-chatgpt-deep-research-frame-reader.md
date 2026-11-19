@@ -68,8 +68,24 @@ New host permission `https://*.web-sandbox.oaiusercontent.com/*`, justified in
   page already displays.
 - The console line `[G2O] App frame answered: <chars>, <n> nested frame(s) [origins]` is the
   first thing to check when a report is missing.
-- Limits: frames are matched by element, so a turn scrolled out and remounted during the harvest
-  loses its report; content that renders only after the request is missed; a report that becomes
+- Limits: content that renders only after the request is missed; a report that becomes
   readable in a turn that is not the last one is appended at the end of the note, because append
   mode is count-based.
 - Non-Deep-Research app frames that render text are exported too, under their own title.
+
+## Amendment 2026-11-19: read frames on every scroll window
+
+Measured live on a conversation with two Deep Research reports (Vietnamese UI): ChatGPT mounts a
+report frame only while its turn is near the viewport, and remounts a new `iframe` element each
+time. The parent asked the frames once, before the auto-scroll pass, and keyed reports by element,
+so a sync saved neither report and gave no warning. Asked directly while mounted, both frames
+answered (about 110k and 86k characters).
+
+- The auto-scroll pass runs an async `beforeHarvest` step on each mounted window
+  (`ScrollConfig.beforeHarvest`, `AccumulateOptions.beforeHarvest`); ChatGPT uses it to ask the
+  frames mounted in that window.
+- Reports are keyed by `<turn key>:<frame index within the turn>`, so a remounted frame finds the
+  report read in an earlier window and is not asked again.
+- A frame that does not answer is asked again in later windows, up to 3 times, then counts as
+  unreadable for the #283 warning. Frames outside any turn (a hidden zero-height duplicate) are
+  ignored.

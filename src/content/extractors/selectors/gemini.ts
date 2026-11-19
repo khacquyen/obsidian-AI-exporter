@@ -17,6 +17,12 @@ export const SELECTORS = {
   // Query text lines (multiple lines per query)
   queryTextLine: ['.query-text-line', 'p[class*="query-text-line"]'],
 
+  // Every block of a user query in document order. Lines typed as "1. …" or
+  // "• …" render as <ol class="query-numbered-list"> / <ul class="query-bullet-list">
+  // beside the .query-text-line paragraphs (measured live 2026-11-18); reading
+  // only .query-text-line dropped them from the saved note.
+  queryBlock: ['.query-text-line, .query-numbered-list, .query-bullet-list'],
+
   // Model response element (Angular component)
   modelResponse: ['model-response', '[class*="model-response"]'],
 
